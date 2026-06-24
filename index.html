@@ -23,7 +23,9 @@
     <div class="search-box">
         <input type="text" id="cityInput" value="London" placeholder="Enter a city...">
         <button onclick="getWeather()">Compare</button>
+    
     </div>
+    <h3 id="locationDisplay" style="color: #666; margin-bottom: 20px;"></h3>
 
     <div class="grid" id="weatherGrid" style="display: none;">
         <div class="card">
@@ -56,36 +58,43 @@ async function getWeather() {
     const city = document.getElementById('cityInput').value;
     document.getElementById('weatherGrid').style.display = 'grid';
     
-    // UI Reset
-    const elements = ['uk', 'euro', 'us'];
-    elements.forEach(id => {
-        document.getElementById(`${id}-temp`).innerText = '--°C';
-        document.getElementById(`${id}-desc`).innerText = 'Loading...';
-    });
+    // Clear out the old location name while loading
+    document.getElementById('locationDisplay').innerText = "Locating...";
+
+    // ... (keep your UI reset elements code here)
 
     try {
-        // 1. Get coordinates
+        // 1. Get coordinates and location details
         const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`);
         const geoData = await geoRes.json();
         
-        if (!geoData.results) {
+        if (!geoData.results || geoData.results.length === 0) {
+            document.getElementById('locationDisplay').innerText = "";
             alert("Location not found!");
             return;
         }
         
-        const { latitude, longitude } = geoData.results[0];
+        // Extract the location data
+        const result = geoData.results[0];
+        const latitude = result.latitude;
+        const longitude = result.longitude;
+        
+        // Build a readable location string (e.g., "Preston, England, United Kingdom")
+        const locationName = [result.name, result.admin1, result.country].filter(Boolean).join(', ');
+        
+        // Display it on the screen!
+        document.getElementById('locationDisplay').innerText = `Showing weather for: ${locationName} (${latitude.toFixed(2)}, ${longitude.toFixed(2)})`;
 
-        // 2. Fetch current weather (using the simplest, most stable endpoint)
-        // We use &current= to get the live, high-resolution "best match" data
+        // 2. Fetch current weather
         const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code`;
         const weatherRes = await fetch(weatherUrl);
         const data = await weatherRes.json();
 
-        // 3. Update the UI with the high-quality, default model result
+        // 3. Update the UI cards
         const temp = `${Math.round(data.current.temperature_2m)}°C`;
         const desc = getWeatherDesc(data.current.weather_code);
 
-        // We fill all three cards with this data to show we have a working connection
+        const elements = ['uk', 'euro', 'us'];
         elements.forEach(id => {
             document.getElementById(`${id}-temp`).innerText = temp;
             document.getElementById(`${id}-desc`).innerText = desc;
@@ -93,7 +102,7 @@ async function getWeather() {
 
     } catch (error) {
         console.error("Error:", error);
-        alert("Failed to fetch weather. Check console for details.");
+        document.getElementById('locationDisplay').innerText = "Error finding location.";
     }
 }
 
