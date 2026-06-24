@@ -155,7 +155,6 @@
 <script>
 let debounceTimer;
 
-// Enhanced styling helpers mapping codes to descriptive text and custom icons
 function getWeatherDetails(code) {
     const mapping = {
         0: { text: "Clear Sky", icon: "fa-sun text-warning" },
@@ -172,11 +171,20 @@ function getWeatherDetails(code) {
     return mapping[code] || { text: "Variable", icon: "fa-cloud-sun-rain text-primary" };
 }
 
+// Helper to determine if an entry fits a basic UK Postcode pattern
+function isUKPostcode(str) {
+    const clean = str.replace(/\s+/g, '').toUpperCase();
+    // Matches most UK postcode structures (e.g. PR40ER, M11AA, SW1A1AA)
+    const postcodeRegex = /^[A-Z]{1,2}[0-9][A-Z0-9]? [0-9][A-Z]{2}$|[A-Z]{1,2}[0-9]{1,2}[A-Z]?$/i;
+    return postcodeRegex.test(str.trim()) || (clean.length >= 5 && clean.length <= 7 && /[0-9]/.test(clean));
+}
+
 async function fetchSuggestions() {
-    const query = document.getElementById('cityInput').value;
+    const query = document.getElementById('cityInput').value.trim();
     const datalist = document.getElementById('locationSuggestions');
 
-    if (query.length < 3) {
+    // Skip suggestion API hits if the user is typing a direct numeric postcode
+    if (query.length < 3 || isUKPostcode(query)) {
         datalist.innerHTML = '';
         return;
     }
@@ -184,7 +192,8 @@ async function fetchSuggestions() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
         try {
-            const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`);
+            // Append "United Kingdom" to the suggestion engine to force local priorities
+            const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query + " United Kingdom")}&count=5&language=en&format=json`);
             const geoData = await geoRes.json();
             datalist.innerHTML = '';
 
@@ -202,13 +211,9 @@ async function fetchSuggestions() {
 }
 
 async function getWeather() {
-    let cityInput = document.getElementById('cityInput').value;
-    
-    // FIX: If the user selected a suggestion with commas, only use the first part (the actual town name)
-    const city = cityInput.includes(',') ? cityInput.split(',')[0].trim() : cityInput;
-
+    let cityInput = document.getElementById('cityInput').value.trim();
     document.getElementById('weatherGrid').style.display = 'flex';
-    document.getElementById('locationDisplay').innerHTML = `<div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>Analyzing coordinates...`;
+    document.getElementById('locationDisplay').innerHTML = `<div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>Analyzing location...`;
     
     const elements = ['uk', 'euro', 'us'];
     elements.forEach(id => {
@@ -217,21 +222,46 @@ async function getWeather() {
         document.getElementById(`${id}-icon`).innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-muted fs-3"></i>`;
     });
 
+    let latitude, longitude, locationName;
+
     try {
-        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`);
-        const geoData = await geoRes.json();
-        
-        if (!geoData.results || geoData.results.length === 0) {
-            document.getElementById('locationDisplay').innerText = "Location not found. Please try again.";
-            return;
+        // ROUTE 1: If it looks like a UK Postcode, bypass global maps and hit a localized UK API
+        if (isUKPostcode(cityInput)) {
+            const postCodeClean = cityInput.replace(/\s+/g, '');
+            const postCodeRes = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(postCodeClean)}`);
+            const postCodeData = await postCodeRes.json();
+
+            if (postCodeData.status === 200 && postCodeData.result) {
+                latitude = postCodeData.result.latitude;
+                longitude = postCodeData.result.longitude;
+                locationName = `${cityInput.toUpperCase()} (${postCodeData.result.admin_district}, ${postCodeData.result.country})`;
+            } else {
+                document.getElementById('locationDisplay').innerText = "Invalid UK Postcode. Try adding a space.";
+                return;
+            }
+        } 
+        // ROUTE 2: If it's a regular text string name (like "Inskip")
+        else {
+            const city = cityInput.includes(',') ? cityInput.split(',')[0].trim() : cityInput;
+            // Explicitly appending "United Kingdom" handles the search priority safely
+            const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city + " United Kingdom")}&count=1&language=en&format=json`);
+            const geoData = await geoRes.json();
+            
+            if (!geoData.results || geoData.results.length === 0) {
+                document.getElementById('locationDisplay').innerText = "Location name not found. Please try again.";
+                return;
+            }
+            
+            const result = geoData.results[0];
+            latitude = result.latitude;
+            longitude = result.longitude;
+            locationName = [result.name, result.admin1, result.country].filter(Boolean).join(', ');
         }
         
-        const result = geoData.results[0];
-        const { latitude, longitude } = result;
-        const locationName = [result.name, result.admin1, result.country].filter(Boolean).join(', ');
-        
+        // Print verified localized output header
         document.getElementById('locationDisplay').innerHTML = `<i class="fa-solid fa-circle-check text-success me-1"></i> Tracking: <strong class="text-dark">${locationName}</strong> <span class="text-muted ms-1">(${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°)</span>`;
 
+        // Fetch unified high-res weather data coordinates 
         const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code`;
         const weatherRes = await fetch(weatherUrl);
         const data = await weatherRes.json();
@@ -247,14 +277,13 @@ async function getWeather() {
 
     } catch (error) {
         console.error("Error:", error);
-        document.getElementById('locationDisplay').innerText = "Error locating system data feeds.";
+        document.getElementById('locationDisplay').innerText = "System error tracking location coordinates.";
     }
 }
 
 // Initial execute
 getWeather();
 </script>
-
 <!-- Bootstrap Bundle JavaScript -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
