@@ -56,7 +56,7 @@ async function getWeather() {
     const city = document.getElementById('cityInput').value;
     document.getElementById('weatherGrid').style.display = 'grid';
     
-    // Reset cards to loading state on every new search
+    // Reset cards to loading state
     document.getElementById('uk-temp').innerText = '--°C';
     document.getElementById('uk-desc').innerText = 'Loading...';
     document.getElementById('euro-temp').innerText = '--°C';
@@ -65,7 +65,7 @@ async function getWeather() {
     document.getElementById('us-desc').innerText = 'Loading...';
 
     try {
-        // Step 1: Use Open-Meteo's geocoding API (much more reliable for browser fetch)
+        // Step 1: Geocode the location name into Lat/Lon coordinates
         const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`);
         const geoData = await geoRes.json();
         
@@ -77,29 +77,49 @@ async function getWeather() {
         const lat = geoData.results[0].latitude;
         const lon = geoData.results[0].longitude;
 
-        // Step 2: Query the weather models
-        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&models=metno,ecmwf_ifs025,gfs_seamless`;
+        // Step 2: Fetch hourly tracks for all 3 major agency models
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weather_code&models=metno,ecmwf_ifs025,gfs_seamless`;
         const weatherRes = await fetch(weatherUrl);
+        
+        if (!weatherRes.ok) {
+            throw new Error(`API returned status ${weatherRes.status}`);
+        }
+        
         const data = await weatherRes.json();
 
-        // Step 3: Update the UI
-        document.getElementById('uk-temp').innerText = `${Math.round(data.current_metno.temperature_2m)}°C`;
-        document.getElementById('uk-desc').innerText = getWeatherDesc(data.current_metno.weather_code);
+        // Step 3: Extract the first index [0] of the hourly arrays (representing the current hour)
+        
+        // UK Met Office / MetNo
+        if (data.hourly_metno) {
+            document.getElementById('uk-temp').innerText = `${Math.round(data.hourly_metno.temperature_2m[0])}°C`;
+            document.getElementById('uk-desc').innerText = getWeatherDesc(data.hourly_metno.weather_code[0]);
+        } else {
+            document.getElementById('uk-desc').innerText = "Model Unavailable";
+        }
 
-        document.getElementById('euro-temp').innerText = `${Math.round(data.current_ecmwf_ifs025.temperature_2m)}°C`;
-        document.getElementById('euro-desc').innerText = getWeatherDesc(data.current_ecmwf_ifs025.weather_code);
+        // ECMWF (European Model)
+        if (data.hourly_ecmwf_ifs025) {
+            document.getElementById('euro-temp').innerText = `${Math.round(data.hourly_ecmwf_ifs025.temperature_2m[0])}°C`;
+            document.getElementById('euro-desc').innerText = getWeatherDesc(data.hourly_ecmwf_ifs025.weather_code[0]);
+        } else {
+            document.getElementById('euro-desc').innerText = "Model Unavailable";
+        }
 
-        document.getElementById('us-temp').innerText = `${Math.round(data.current_gfs_seamless.temperature_2m)}°C`;
-        document.getElementById('us-desc').innerText = getWeatherDesc(data.current_gfs_seamless.weather_code);
+        // GFS (US Global Model)
+        if (data.hourly_gfs_seamless) {
+            document.getElementById('us-temp').innerText = `${Math.round(data.hourly_gfs_seamless.temperature_2m[0])}°C`;
+            document.getElementById('us-desc').innerText = getWeatherDesc(data.hourly_gfs_seamless.weather_code[0]);
+        } else {
+            document.getElementById('us-desc').innerText = "Model Unavailable";
+        }
 
     } catch (error) {
         console.error("Error fetching weather data:", error);
-        alert("Something went wrong fetching the data. Check your browser console!");
+        alert("Failed to parse weather data. See the browser console for details.");
     }
 }
 
-// Run once on load
+// Run once on initial layout load
 getWeather();
-</script>
-</body>
+</script></body>
 </html>
