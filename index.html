@@ -202,7 +202,11 @@ async function fetchSuggestions() {
 }
 
 async function getWeather() {
-    const city = document.getElementById('cityInput').value;
+    let cityInput = document.getElementById('cityInput').value;
+    
+    // FIX: If the user selected a suggestion with commas, only use the first part (the actual town name)
+    const city = cityInput.includes(',') ? cityInput.split(',')[0].trim() : cityInput;
+
     document.getElementById('weatherGrid').style.display = 'flex';
     document.getElementById('locationDisplay').innerHTML = `<div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>Analyzing coordinates...`;
     
